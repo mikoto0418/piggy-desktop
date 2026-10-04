@@ -1,0 +1,333 @@
+/* 谷歌猪桌宠 · 样式
+   铁律：
+   1) 动画只改 transform（不改 width/height/top/left），否则会污染内容测量。
+   2) 必须提供 [hidden] { display: none } 兜底。
+   3) 背景必须完全透明，且不要铺满屏幕。 */
+
+/* 铁律 2：兜底 */
+[hidden] {
+  display: none !important;
+}
+
+/* 不透明度：常态值（P2-7）与「悬停让位」值（P2-6）都写成这个变量，
+   由 main.js 的 applyOpacity() 维护。
+
+   🔴 为什么不用 Win32 的 SetLayeredWindowAttributes(LWA_ALPHA)：
+   那个 API 要求窗口带 WS_EX_LAYERED，而互动模式下实测 ex=0x8000198
+   **没有这一位**（只有穿透模式才成对设上 TRANSPARENT|LAYERED）。
+   为了调不透明度去硬加 LAYERED，会改变 DirectComposition 透明窗口的
+   合成路径 —— 有把整块透明底变黑的风险。CSS 变量零风险，
+   而且天然走 GPU 合成，淡入淡出不要钱。 */
+:root {
+  --piggy-opacity: 1;
+  /* 猪的显示尺寸（P2-7 的 scalePercent）。默认 64px = 100%。
+
+     🔴 为什么改**尺寸**而不是套 `transform: scale()`：
+     铁律 1 要求用**布局盒**（offsetWidth/offsetHeight）量内容，
+     而 transform **不参与布局** —— 套了 scale 之后 offsetWidth 还是 64，
+     窗口尺寸会算错，猪就被裁掉或留一大块透明死区。
+     直接改 width/height 走的是布局，量出来天然是对的。
+
+     （`zoom` 也能参与布局，但会连带缩放面板和气泡，把字号搞得没法读。
+     只缩猪、面板保持原尺寸，是刻意的选择。） */
+  --pig-size: 64px;
+}
+
+/* 铁律 1 的延伸：opacity 不参与布局，不会污染内容测量，
+   所以淡入淡出可以和量窗口尺寸共存。 */
+html {
+  opacity: var(--piggy-opacity, 1);
+  transition: opacity 0.3s ease;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: transparent;
+  overflow: hidden;
+  /* 桌宠不该出现文本选择光标 */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  /* 触屏不要吞掉滚动手势（参考项目的缺陷之一） */
+  touch-action: manipulation;
+}
+
+.dp-scene {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 关键：场景本身不能挡住桌面点击。
+     参考项目的缺陷是整块透明矩形 ~90% 是死区。
+     这里让场景不接收指针事件，只有猪本体和面板接收。 */
+  pointer-events: none;
+}
+
+/* 内容栈：量它的布局盒来定窗口大小。
+   transform 不影响 offsetWidth/offsetHeight，所以动画安全。 */
+.dp-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+/* 默认顺序：气泡 → 面板 → 猪（面板在猪上方）。
+   猪贴着屏幕顶部时上方放不下面板，main.js 会给 .dp-stack 加 is-below，
+   把猪挪到最上面、面板翻到下面 —— 否则面板会被屏幕边缘裁掉。 */
+.dp-bubble {
+  order: 0;
+}
+.dp-panel {
+  order: 1;
+}
+.dp-pig {
+  order: 2;
+}
+.dp-stack.is-below .dp-pig {
+  order: 0;
+}
+.dp-stack.is-below .dp-panel {
+  order: 1;
+}
+.dp-stack.is-below .dp-bubble {
+  order: 3;
+}
+
+/* ---------------- 猪本体 ---------------- */
+
+.dp-pig {
+  /* 只有猪本体接收点击 */
+  pointer-events: auto;
+  width: var(--pig-size, 64px);
+  height: var(--pig-size, 64px);
+  display: grid;
+  place-items: center;
+  /* 动画只改 transform（铁律 1），且由 main.js 以**低帧率**驱动。
+     实测：用 CSS animation 常驻 60fps 会让整棵进程树空闲占用约 14% 单核，
+     对一个桌宠完全不可接受；改成 JS 定时器后可以真正按帧率降档。 */
+  transform-origin: 50% 85%;
+  will-change: transform;
+  cursor: grab;
+}
+
+.dp-pig:active {
+  cursor: grabbing;
+}
+
+.dp-pig img {
+  /* 跟随 --pig-size，不要写死 64px，否则改缩放时图不跟着变 */
+  width: 100%;
+  height: 100%;
+  display: block;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
+}
+
+/* 减动效偏好：参考项目几乎无视这条，我们必须尊重 */
+@media (prefers-reduced-motion: reduce) {
+  .dp-pig {
+    transform: none !important;
+  }
+}
+
+/* ---------------- 照顾面板 ---------------- */
+
+.dp-panel {
+  pointer-events: auto;
+  width: 150px;
+  padding: 7px 8px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #373a32;
+  font: 11px/1.4 "Microsoft YaHei", system-ui, sans-serif;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+  /* 出现/消失用 transform，避免动 layout */
+  transform-origin: 50% 100%;
+  transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+/* 「占位但不可见」：照常参与布局（offsetHeight 有效），但不可见也不可命中。
+   打开面板时先用它把窗口撑到最终尺寸，再真的显示出来 —— 否则面板会在旧视口里
+   盖住光标、把猪挤走，触发一次假的 pointerleave 把面板立刻关掉。 */
+.dp-panel.is-measuring {
+  visibility: hidden;
+}
+
+.dp-panel.is-hiding {
+  transform: scale(0.94) translateY(4px);
+  opacity: 0;
+}
+
+.dp-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.dp-lv {
+  font-weight: 700;
+  color: #e95892;
+}
+
+.dp-lv-title {
+  color: #9a8f86;
+  font-size: 10px;
+}
+
+.dp-mode {
+  margin-left: auto;
+  font-size: 10px;
+  color: #9a8f86;
+}
+
+/* ---------------- 四维状态条 ---------------- */
+
+.dp-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dp-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dp-bar-name {
+  width: 26px;
+  color: #9a8f86;
+  font-size: 10px;
+  flex: none;
+}
+
+.dp-track {
+  flex: 1;
+  height: 7px;
+  border-radius: 4px;
+  background: #f0eae5;
+  overflow: hidden;
+  display: block;
+}
+
+/* 铁律：用 transform:scaleX() 而不是动画 width */
+.dp-track > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: 4px;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: #7ec98f;
+  transition: transform 0.25s ease, background-color 0.25s ease;
+}
+
+/* 四维各自的颜色 */
+.dp-bar[data-stat="satiety"] .dp-track > i {
+  background: #f0a95c;
+}
+.dp-bar[data-stat="happiness"] .dp-track > i {
+  background: #e95892;
+}
+.dp-bar[data-stat="cleanliness"] .dp-track > i {
+  background: #5cb8f0;
+}
+.dp-bar[data-stat="health"] .dp-track > i {
+  background: #7ec98f;
+}
+
+/* 低于 25% 变红提醒 */
+.dp-bar.is-low .dp-track > i {
+  background: #e05c4b;
+}
+
+.dp-bar-val {
+  width: 20px;
+  text-align: right;
+  color: #6f665f;
+  font-size: 10px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- 动作按钮 ---------------- */
+
+.dp-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.dp-actions button {
+  flex: 1;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 6px;
+  background: #f7f2ee;
+  font-size: 14px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.08s ease;
+}
+
+.dp-actions button:hover {
+  background: #efe5dd;
+}
+
+.dp-actions button:active {
+  transform: scale(0.94);
+}
+
+/* 刚用过的动作：短暂置灰（冷却全为 0，这里只是给个手感反馈） */
+.dp-actions button.is-used {
+  background: #e6ded7;
+}
+
+.dp-note {
+  margin-top: 5px;
+  color: #a99f96;
+  font-size: 9px;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+/* ---------------- 台词气泡 ---------------- */
+
+.dp-bubble {
+  /* 在正常流里（不是 absolute）：这样 [hidden] 时内容栈自动收缩，
+     窗口贴合尺寸不用任何手写的预留常量。 */
+  position: relative;
+  max-width: 150px;
+  margin-bottom: 5px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: #fff;
+  color: #373a32;
+  font: 12px/1.45 "Microsoft YaHei", system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  pointer-events: none;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.dp-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: #fff;
+  transform: rotate(45deg);
+}

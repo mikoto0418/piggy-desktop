@@ -1,0 +1,36 @@
+# ---- 参考项目克隆（只读，仅用于比对功能点，不随本仓库分发）----
+/_ref/
+
+# ---- Rust / Tauri 构建产物 ----
+/app/src-tauri/target/
+/app/src-tauri/gen/schemas/
+
+# ---- 前端依赖 ----
+node_modules/
+pnpm-lock.yaml.bak
+
+# ---- 本地便携打包产物 ----
+/dist/
+/app/dist/
+
+# ---- 临时/探针截图与脚本 ----
+/_iconcheck*.py
+/_settings-shot.png
+/*-shot.png
+*.tmp
+
+# ---- 运行期日志与存档（正常情况下写在 %APPDATA%\com.piggy.desktop\）----
+*.log
+piggy.log
+pet.json
+pet.json.bak
+config.json
+position.json
+
+# ---- 操作系统 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---- 临时比对图 ----
+/analysis/_tmp_preview/

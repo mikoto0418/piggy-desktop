@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>谷歌猪</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      DOM 契约：
+        [data-piggy-pet]  场景根（只负责居中，不接收指针事件）
+        #stack            内容栈 —— **量它的布局盒**来贴合窗口（铁律 1）
+        #pig              猪本体（唯一接收点击的元素）
+        #bubble           台词气泡
+        #panel            照顾面板（四维状态条 + 动作按钮）
+    -->
+    <div class="dp-scene" data-piggy-pet>
+      <div class="dp-stack" id="stack">
+        <!-- 台词气泡：放在正常流里，这样 [hidden] 时内容栈自动收缩，
+             窗口贴合尺寸不需要任何手写的预留常量。 -->
+        <div class="dp-bubble" id="bubble" hidden></div>
+
+        <!-- 照顾面板：悬停猪或面板本身时出现 -->
+        <div class="dp-panel" id="panel" hidden>
+          <div class="dp-panel-head">
+            <span class="dp-lv">Lv.<b id="lv-num">1</b></span>
+            <span class="dp-lv-title" id="lv-title">小猪崽</span>
+            <span class="dp-mode" id="hud-mode">互动</span>
+          </div>
+
+          <div class="dp-bars">
+            <div class="dp-bar" data-stat="satiety">
+              <span class="dp-bar-name">饱食</span>
+              <span class="dp-track"><i id="bar-satiety"></i></span>
+              <b class="dp-bar-val" id="val-satiety">100</b>
+            </div>
+            <div class="dp-bar" data-stat="happiness">
+              <span class="dp-bar-name">心情</span>
+              <span class="dp-track"><i id="bar-happiness"></i></span>
+              <b class="dp-bar-val" id="val-happiness">100</b>
+            </div>
+            <div class="dp-bar" data-stat="cleanliness">
+              <span class="dp-bar-name">清洁</span>
+              <span class="dp-track"><i id="bar-cleanliness"></i></span>
+              <b class="dp-bar-val" id="val-cleanliness">100</b>
+            </div>
+            <div class="dp-bar" data-stat="health">
+              <span class="dp-bar-name">健康</span>
+              <span class="dp-track"><i id="bar-health"></i></span>
+              <b class="dp-bar-val" id="val-health">5</b>
+            </div>
+          </div>
+
+          <div class="dp-actions" id="actions">
+            <button type="button" data-act="feed" title="喂食">🍎</button>
+            <button type="button" data-act="bathe" title="洗澡">🛁</button>
+            <button type="button" data-act="play" title="玩耍">🎾</button>
+            <button type="button" data-act="pet" title="摸摸">❤️</button>
+          </div>
+
+          <div class="dp-note" id="hud-note"></div>
+        </div>
+
+        <div class="dp-pig" id="pig" title="左键拖动 · 单击摸摸 · 右键固定面板">
+          <img id="pig-art" src="assets/piglet.svg" alt="谷歌猪" draggable="false" />
+        </div>
+      </div>
+    </div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+# 统一换行符：仓库里一律 LF，检出时按平台
+* text=auto eol=lf
+
+# 明确二进制，别让 git 去猜
+*.png  binary
+*.ico  binary
+*.jpg  binary
+*.exe  binary
+*.pdb  binary
+
+# 这些是 Windows 脚本，保留 CRLF 更顺手
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# 锁文件别在 diff 里刷屏
+Cargo.lock  -diff linguist-generated

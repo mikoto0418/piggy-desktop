@@ -1,0 +1,16 @@
+# 本项目的依赖下载源配置。
+#
+# 原因：本机直连 crates.io 索引极慢（实测 index.crates.io 1.6s，
+# 且 `cargo check` 会因 "transfer too slow" 反复失败），国内镜像只需约 0.1s。
+# 这里只替换 crates.io 的下载源，不改动任何全局 cargo 配置。
+#
+# 如需改回官方源，删除本文件即可。
+
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[net]
+retry = 5

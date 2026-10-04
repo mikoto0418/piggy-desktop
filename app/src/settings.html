@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>谷歌猪 · 设置</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <header class="head">
+    <h1>谷歌猪 · 设置</h1>
+    <p class="sub">改完立即生效，不需要点保存。</p>
+  </header>
+
+  <main>
+    <!-- ── 悬浮层 ───────────────────────────────────────────── -->
+    <section>
+      <h2>悬浮层</h2>
+
+      <div class="row">
+        <label for="clickThrough">
+          <b>默认穿透</b>
+          <span>开启后所有点击都落到下层窗口，猪只负责好看。快捷键可随时切换。</span>
+        </label>
+        <input type="checkbox" id="clickThrough" data-path="overlay.clickThrough">
+      </div>
+
+      <div class="row">
+        <label for="hoverThrough">
+          <b>悬停让位</b>
+          <span>指针扫过猪时淡出并让点击穿过去；停住不动才「醒过来」开面板。</span>
+        </label>
+        <input type="checkbox" id="hoverThrough" data-path="overlay.hoverThrough">
+      </div>
+
+      <div class="row indent" id="hoverOpts">
+        <label for="hoverThroughAlpha">
+          <b>让位时的不透明度</b>
+          <span>越小越透明。<output id="hoverThroughAlphaOut"></output></span>
+        </label>
+        <input type="range" id="hoverThroughAlpha" min="10" max="90" step="5"
+               data-path="overlay.hoverThroughAlpha" data-unit="%">
+      </div>
+
+      <div class="row indent">
+        <label for="hoverWakeDelayMs">
+          <b>停多久算「想互动」</b>
+          <span>低于这个时长判定为「路过」，不会唤醒。<output id="hoverWakeDelayMsOut"></output></span>
+        </label>
+        <input type="range" id="hoverWakeDelayMs" min="300" max="2000" step="50"
+               data-path="overlay.hoverWakeDelayMs" data-unit="ms">
+      </div>
+
+      <div class="row indent">
+        <label for="hoverRestoreDelayMs">
+          <b>移开后多久回到让位</b>
+          <output id="hoverRestoreDelayMsOut"></output>
+        </label>
+        <input type="range" id="hoverRestoreDelayMs" min="0" max="1500" step="50"
+               data-path="overlay.hoverRestoreDelayMs" data-unit="ms">
+      </div>
+
+      <div class="row">
+        <label for="opacityPercent">
+          <b>常态不透明度</b>
+          <output id="opacityPercentOut"></output>
+        </label>
+        <input type="range" id="opacityPercent" min="10" max="100" step="5"
+               data-path="overlay.opacityPercent" data-unit="%">
+      </div>
+
+      <div class="row">
+        <label for="scalePercent">
+          <b>宠物大小</b>
+          <span>只缩放猪，面板字号保持原样以便阅读。<output id="scalePercentOut"></output></span>
+        </label>
+        <input type="range" id="scalePercent" min="50" max="300" step="10"
+               data-path="overlay.scalePercent" data-unit="%">
+      </div>
+    </section>
+
+    <!-- ── 快捷键 ───────────────────────────────────────────── -->
+    <section>
+      <h2>快捷键</h2>
+      <p class="hint">点进输入框后直接按组合键。至少要带一个修饰键（Ctrl / Alt / Shift / Win）。</p>
+
+      <div class="row">
+        <label for="toggleClickThrough">
+          <b>切换穿透模式</b>
+          <span id="boundCt" class="bound"></span>
+        </label>
+        <input type="text" id="toggleClickThrough" class="keycap" readonly
+               data-path="shortcuts.toggleClickThrough" placeholder="点击后按键">
+      </div>
+
+      <div class="row">
+        <label for="toggleVisibility">
+          <b>显示 / 隐藏桌宠</b>
+          <span id="boundVis" class="bound"></span>
+        </label>
+        <input type="text" id="toggleVisibility" class="keycap" readonly
+               data-path="shortcuts.toggleVisibility" placeholder="点击后按键">
+      </div>
+
+      <div id="problems" class="problems" hidden></div>
+    </section>
+
+    <!-- ── 系统 ─────────────────────────────────────────────── -->
+    <section>
+      <h2>系统</h2>
+
+      <div class="row">
+        <label for="launchAtLogin">
+          <b>开机自启</b>
+          <span>写当前用户的启动项，不碰系统级设置。</span>
+        </label>
+        <input type="checkbox" id="launchAtLogin">
+      </div>
+
+      <div class="row">
+        <label for="showTrayIcon">
+          <b>显示托盘图标</b>
+          <span>快捷键全部冲突时，托盘是唯一还能操作的入口（改动需重启生效）。</span>
+        </label>
+        <input type="checkbox" id="showTrayIcon" data-path="system.showTrayIcon">
+      </div>
+    </section>
+
+    <!-- ── 诊断 ─────────────────────────────────────────────── -->
+    <section>
+      <h2>诊断</h2>
+      <pre id="diag" class="diag">读取中…</pre>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="settings.js"></script>
+</body>
+</html>
