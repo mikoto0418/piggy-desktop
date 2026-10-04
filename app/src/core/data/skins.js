@@ -16,15 +16,29 @@
  * > 走这条路的前提是美术里**没有渐变、没有滤镜、颜色都是 `#RRGGBB` 字面量**
  * > —— 这三条本来就是 `gen-scenes.py` / `verify-scenes.py` 在守的硬约束。
  *
- * 场景只留还活着的五个照顾动作：idle / eat / bathe / play / pet。
- * 打工、上学、旅行、钓鱼、番茄钟的场景随那些玩法一起砍掉了。
+ * 场景只留还活着的照顾动作：idle / eat / bathe / play / pet，
+ * 外加状态偏低时摆出来的「累」表情 relax。打工、上学、旅行、钓鱼、番茄钟
+ * 的场景随那些玩法一起砍掉了。
+ *
+ * ⚠️ 这张表必须和宿主 `src/main.js` 的 `SCENE_SRC` **完全一致**。
+ * 少了谁，那个场景就不会被预载重着色（换皮肤时只有它没变色）；
+ * 多了谁，就会去 fetch 一张不存在的图（静默回落到 idle）。
+ * `selftest.mjs` 有一条测试直接读 `main.js` 来守这个契约 ——
+ * 这条测试是**真的抓到了** `relax` 漏登记。
  *
  * @module piggy-core/data/skins
  */
 
-export const SKIN_SCENES = Object.freeze(['idle', 'eat', 'bathe', 'play', 'pet'])
+export const SKIN_SCENES = Object.freeze(['idle', 'eat', 'bathe', 'play', 'pet', 'relax'])
 
-export const REQUIRED_SKIN_SCENES = Object.freeze(SKIN_SCENES.slice(0, 5))
+/**
+ * 必须支持换色的场景 —— 就是全部场景。
+ *
+ * 调色板皮肤是**整图重着色**，没有任何 per-scene 例外，
+ * 所以「必需」和「全部」在这里是同一个集合；分开命名只是为了
+ * 万一以后真有场景不支持换色时，改一处就够。
+ */
+export const REQUIRED_SKIN_SCENES = Object.freeze([...SKIN_SCENES])
 
 /**
  * 猪本体可换色的 6 个槽位，值是**基础美术里实际使用的色值**。

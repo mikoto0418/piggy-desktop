@@ -91,6 +91,26 @@ public static class SProbe {
 $dataDir = "$env:APPDATA\com.piggy.desktop"
 $cfgPath = Join-Path $dataDir "config.json"
 
+# --- 把位图一次性抠成 byte[]，后面在托管内存里扫 ---------------------------------
+#
+# 为什么不用 `$bmp.GetPixel(x, y)` 逐点读：
+# 那是一次 interop 调用，扫一张 922×1076 的图要 ~100 万次，实测要几十秒。
+# 这几十秒里用户完全可能把别的窗口切到前面，于是紧接着的点击**打到了别人身上** ——
+# 表现是「点开关后配置没变」，看起来像功能坏了，其实是探针自己慢出来的竞态。
+# LockBits + Marshal.Copy 一次拷完，之后全是内存里的数组下标，快两个数量级。
+function Get-PixelBuffer($bmp) {
+    $rect = New-Object System.Drawing.Rectangle 0, 0, $bmp.Width, $bmp.Height
+    $data = $bmp.LockBits($rect,
+        [System.Drawing.Imaging.ImageLockMode]::ReadOnly,
+        [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $len = [Math]::Abs($data.Stride) * $bmp.Height
+    $bytes = New-Object byte[] $len
+    [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $len)
+    $stride = $data.Stride
+    $bmp.UnlockBits($data)
+    return [pscustomobject]@{ bytes = $bytes; stride = $stride; w = $bmp.Width; h = $bmp.Height }
+}
+
 $proc = Get-Process piggy-desktop -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $proc) { Write-Output "RESULT: NO_PROCESS"; exit 2 }
 
@@ -117,14 +137,16 @@ $g.Dispose()
 # 容差开到 6 就会把每条 1px 的横边框也当成开关，聚类出一堆假候选。
 $target = @(0x3a, 0x3a, 0x43)
 $tol = 2
+$buf = Get-PixelBuffer $bmp
 $rows = @{}
-for ($y = 0; $y -lt $r[3]; $y++) {
+for ($y = 0; $y -lt $buf.h; $y++) {
+    $base = $y * $buf.stride
     $xs = New-Object System.Collections.ArrayList
-    for ($x = 0; $x -lt $r[2]; $x++) {
-        $p = $bmp.GetPixel($x, $y)
-        if ([Math]::Abs($p.R - $target[0]) -le $tol -and
-            [Math]::Abs($p.G - $target[1]) -le $tol -and
-            [Math]::Abs($p.B - $target[2]) -le $tol) {
+    for ($x = 0; $x -lt $buf.w; $x++) {
+        $i = $base + $x * 4          # Format32bppArgb → 内存里是 B,G,R,A
+        if ([Math]::Abs($buf.bytes[$i + 2] - $target[0]) -le $tol -and
+            [Math]::Abs($buf.bytes[$i + 1] - $target[1]) -le $tol -and
+            [Math]::Abs($buf.bytes[$i]     - $target[2]) -le $tol) {
             [void]$xs.Add($x)
         }
     }
@@ -179,25 +201,42 @@ Write-Output "目标          : 第 2 个开关（悬停让位）屏幕坐标 $c
 $before = (Get-Content $cfgPath -Raw | ConvertFrom-Json).overlay.hoverThrough
 Write-Output "点击前        : hoverThrough = $before"
 
-if (-not [SProbe]::Click($clickX, $clickY)) {
-    Write-Output "RESULT: FAIL SetCursorPos 失败（可能有全屏程序 ClipCursor 锁住光标）"
-    exit 1
+function Read-HoverThrough {
+    return (Get-Content $cfgPath -Raw | ConvertFrom-Json).overlay.hoverThrough
 }
-Start-Sleep -Milliseconds 1500
 
-$after = (Get-Content $cfgPath -Raw | ConvertFrom-Json).overlay.hoverThrough
+# 点一次 + 校验；没生效就重试。
+#
+# 合成点击打的是**真实光标位置**，用户一动鼠标就偏了 ——
+# `test-interaction.ps1` 的开头专门解释过这件事，所以那边改用了 PostMessage。
+# 这里没法轻易换成 PostMessage（要算 DOM 坐标），于是改成「点 → 读配置看真的变了没 →
+# 没变就重试」，而不是「点一次然后断言」。同时每次点击前**重新置顶**：
+# 别的窗口被用户切到前面来时，点击会落到那个窗口上。
+function Set-HoverThroughByClick([int]$x, [int]$y, [bool]$want, [int]$tries = 3) {
+    for ($i = 1; $i -le $tries; $i++) {
+        [void][SProbe]::BringToFront($h)
+        Start-Sleep -Milliseconds 350
+        if (-not [SProbe]::Click($x, $y)) { return $false }
+        Start-Sleep -Milliseconds 1200
+        if ((Read-HoverThrough) -eq $want) { return $true }
+        Write-Output "  （第 $i 次点击没生效，重试）"
+    }
+    return $false
+}
+
+$ok = Set-HoverThroughByClick $clickX $clickY (-not [bool]$before)
+$after = Read-HoverThrough
 Write-Output "点击后        : hoverThrough = $after"
 
 $fail = @()
-if ($after -eq $before) { $fail += "点开关后配置没变（$before -> $after）" }
+if (-not $ok -or $after -eq $before) { $fail += "点开关后配置没变（$before -> $after）" }
 
 # 再点回去，确认是双向的
 if (-not $LeaveOn) {
-    if (-not [SProbe]::Click($clickX, $clickY)) { $fail += "第二次点击失败" }
-    Start-Sleep -Milliseconds 1500
-    $back = (Get-Content $cfgPath -Raw | ConvertFrom-Json).overlay.hoverThrough
+    $ok2 = Set-HoverThroughByClick $clickX $clickY ([bool]$before)
+    $back = Read-HoverThrough
     Write-Output "再点一次      : hoverThrough = $back"
-    if ($back -ne $before) { $fail += "再点一次没回到原值（期望 $before，实际 $back）" }
+    if (-not $ok2 -or $back -ne $before) { $fail += "再点一次没回到原值（期望 $before，实际 $back）" }
 } else {
     Write-Output "再点一次      : 跳过（-LeaveOn，保持 hoverThrough = $after）"
 }

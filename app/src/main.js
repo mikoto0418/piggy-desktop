@@ -268,6 +268,10 @@ async function initMode() {
   applyScale();
   broadcastSkin();
 
+  // 设置窗口刚打开时会来问一次皮肤列表 —— 存档在**桌宠窗口的内存里**，
+  // 设置窗口自己看不到，只能问。
+  await listen("piggy://skin-request", () => broadcastSkin());
+
   // 位置变化时保存（防抖）
   await listen("tauri://move", debounce(savePosition, 400));
 }
@@ -740,12 +744,22 @@ async function applySkin(palette) {
   if (url) pigArtEl.src = url;
 }
 
-/** 把当前皮肤广播给设置窗口（改完皮肤后回显用）。 */
+/** 把当前皮肤广播给设置窗口（打开时问一次、改完之后再回播一次）。 */
 function broadcastSkin() {
   const state = getState();
+  const current = state?.skin ?? "default";
   emit("piggy://skin", {
-    key: state?.skin ?? "default",
-    entries: skinsView().entries.map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })),
+    key: current,
+    entries: skinsView().entries.map((e) => ({
+      key: e.key,
+      label: e.label,
+      emoji: e.emoji,
+      description: e.description ?? "",
+      current: e.key === current,
+      // 默认皮肤的 palette 是 `null`（走原图直出），但界面要拿它画色块预览，
+      // 所以这里统一发「实际生效的调色板」—— 默认皮肤就是基础 6 色。
+      palette: e.palette ?? core.SKIN_SLOTS,
+    })),
   });
 }
 

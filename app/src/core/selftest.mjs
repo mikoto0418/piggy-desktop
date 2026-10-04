@@ -8,13 +8,17 @@
  * @module piggy-core/selftest
  */
 
+import { readFileSync } from 'node:fs'
+
 import {
   ACTIONS, ACTION_ORDER, CARE_KIND, DEFAULT_TOY, DIET, FORMS, MAX, STATE_VERSION, SETTLE_STEP_MS,
   SATIETY_DECAY_PER_MIN, HAPPINESS_DECAY_PER_MIN, CLEANLINESS_DECAY_PER_MIN,
   UPGRADES, V11_OLD_JOB_PAY, V11_SUBJECT_OF, V13_REMOVED_FIELDS, V13_REMOVED_STATS,
-  act, adopt, bar, buy, careEffects, careItems, chat, decay, feed, formStageView, formsView,
-  grantAll, hatch, hatchEgg, healthPercent, inventoryView, layEgg, levelFor, levelProgress, lifeStageFor,
-  migrate, mood, replyToLine, say, selectSkin, setForm, skinView, traitView, useItem, xpForLevel,
+  act, adopt, allSkins, bar, buy, careEffects, careItems, chat, decay, ensureSkins, feed,
+  formStageView, formsView, grantAll, hatch, hatchEgg, healthPercent, inventoryView, layEgg,
+  levelFor, levelProgress, lifeStageFor, migrate, mood, registerCustomSkin, replyToLine, say,
+  selectSkin, setForm, skinPalette, skinStageView, skinView, traitView, useItem, xpForLevel,
+  SKINS, SKIN_SCENES, SKIN_SLOTS, SKIN_SLOT_ORDER,
 } from './index.js'
 
 // ---------------------------------------------------------------------------
@@ -543,6 +547,136 @@ group('8. 其余保留下来的东西还能跑（视图 / 台词 / 皮肤 / 形�
   ok('skinView 里有默认皮肤', skinView(pig).entries.some(skin => skin.key === 'default'))
   ok('selectSkin("mint") 成功', selectSkin(pig, 'mint', T0).ok === true && pig.skin === 'mint')
   ok('selectSkin("不存在") 被拒', selectSkin(pig, 'nope', T0).reason === 'unknown')
+
+  // ── P2-1 皮肤：调色板模型 ────────────────────────────────────────────────
+  //
+  // 皮肤 = **一套 6 色调色板**，不是一套新图：运行时把基础 SVG 里的 6 个色值换掉。
+  // 下面这组守的是**美术与代码之间的契约**。它必须由测试来守，因为契约破了是
+  // **静默失败**：替换不到那个色值就原样保留，猪只是「某个部位没变色」，
+  // 肉眼在 64px 上几乎看不出来，但皮肤就是残的。
+
+  const svgDir = new URL('../assets/', import.meta.url)
+  const svgNames = [
+    'piglet.svg', 'piglet-eat.svg', 'piglet-bathe.svg',
+    'piglet-play.svg', 'piglet-pet.svg', 'piglet-relax.svg',
+  ]
+  const svgTexts = new Map()
+  for (const name of svgNames) svgTexts.set(name, readFileSync(new URL(name, svgDir), 'utf8'))
+
+  // (1) 6 个槽位色必须**真的**出现在基础图里
+  const baseSvg = svgTexts.get('piglet.svg')
+  const missingSlots = SKIN_SLOT_ORDER.filter(slot => !baseSvg.toUpperCase().includes(SKIN_SLOTS[slot].toUpperCase()))
+  ok(`SKIN_SLOTS 的 6 个色值在 piglet.svg 里都存在（缺：${missingSlots.join(',') || '无'}）`,
+    missingSlots.length === 0)
+
+  // (2) 6 个槽位色在**每一张**场景图里都在 —— 场景是派生出来的，本体逐位复用
+  const slotsPerScene = svgNames.filter(name => {
+    const text = svgTexts.get(name).toUpperCase()
+    return SKIN_SLOT_ORDER.every(slot => text.includes(SKIN_SLOTS[slot].toUpperCase()))
+  })
+  ok(`6 个槽位色在全部 ${svgNames.length} 张场景图里都在（实际 ${slotsPerScene.length} 张）`,
+    slotsPerScene.length === svgNames.length,
+    `缺：${svgNames.filter(n => !slotsPerScene.includes(n)).join(',')}`)
+
+  // (3) 色值清单：14 个 = 6 个本体槽位 + 8 个道具色。
+  //     道具色**不能**出现在槽位表里，否则换皮肤会把蛋糕/泡泡也一起变色。
+  const allColors = new Set()
+  for (const text of svgTexts.values()) {
+    for (const m of text.matchAll(/#[0-9A-Fa-f]{6}/g)) allColors.add(m[0].toUpperCase())
+  }
+  const slotSet = new Set(SKIN_SLOT_ORDER.map(s => SKIN_SLOTS[s].toUpperCase()))
+  const propColors = [...allColors].filter(c => !slotSet.has(c)).sort()
+  const EXPECTED_PROPS = ['#7EC8E3', '#8C3A52', '#9AA0A6', '#A8DDF0', '#BEE7F5', '#D19A5C', '#E8B77A', '#FFFFFF']
+  ok(`美术共 14 个色值（6 槽位 + 8 道具），实际 ${allColors.size}`,
+    allColors.size === 14, [...allColors].sort().join(','))
+  ok(`道具色恰好是那 8 个（多/少：${propColors.filter(c => !EXPECTED_PROPS.includes(c)).concat(EXPECTED_PROPS.filter(c => !propColors.includes(c))).join(',') || '无'}）`,
+    propColors.length === 8 && propColors.every((c, i) => c === EXPECTED_PROPS[i]),
+    propColors.join(','))
+
+  // (4) 每个内置皮肤：6 个槽位齐全、都是合法 #RRGGBB、且至少改掉一个槽位
+  const badSkins = SKINS.filter(skin => {
+    const keys = Object.keys(skin.palette ?? {})
+    if (keys.length !== SKIN_SLOT_ORDER.length) return true
+    if (!SKIN_SLOT_ORDER.every(slot => /^#[0-9A-Fa-f]{6}$/.test(skin.palette[slot] ?? ''))) return true
+    return !SKIN_SLOT_ORDER.some(slot => skin.palette[slot].toUpperCase() !== SKIN_SLOTS[slot].toUpperCase())
+  })
+  ok(`每个内置皮肤的调色板都合法且真的改了色（坏：${badSkins.map(s => s.key).join(',') || '无'}）`, badSkins.length === 0)
+
+  // (5) 皮肤不能碰到道具色 —— 薄荷猪吃的还得是同一块蛋糕
+  const bleedy = SKINS.filter(skin =>
+    SKIN_SLOT_ORDER.some(slot => propColors.includes(skin.palette[slot].toUpperCase())))
+  ok(`没有皮肤把本体槽位染成道具色（越界：${bleedy.map(s => s.key).join(',') || '无'}）`, bleedy.length === 0)
+
+  // (6) `skinPalette`：默认皮肤必须返回 null（宿主据此走原图直出快路径）
+  const defaultPig = hatchEgg(T0)
+  ok('默认皮肤的 skinPalette 是 null（走原图直出）', skinPalette(defaultPig) === null)
+  selectSkin(defaultPig, 'mint', T0)
+  const mintPalette = skinPalette(defaultPig)
+  ok('换成薄荷猪后 skinPalette 返回 6 个槽位',
+    mintPalette !== null && Object.keys(mintPalette).length === 6)
+  ok('薄荷猪的身体色就是表里写的那个',
+    mintPalette.body === SKINS.find(s => s.key === 'mint').palette.body)
+  ok('skinPalette 不会顺手把 state.skin 改掉', defaultPig.skin === 'mint')
+
+  // (7) 自制皮肤：缺的槽位**回落基础色**，而不是整条作废
+  const partial = hatchEgg(T0)
+  const reg = registerCustomSkin(partial, { key: 'my-pig', label: '我的猪', palette: { body: '#123456' } }, T0)
+  ok('只写一个槽位也能注册自制皮肤', reg.ok === true && partial.skin === 'my-pig')
+  const customPalette = skinPalette(partial)
+  ok('写了的那一槽用新色', customPalette.body === '#123456')
+  ok('没写的槽位回落基础色（鼻子）', customPalette.nose.toUpperCase() === SKIN_SLOTS.nose.toUpperCase())
+
+  // (8) 一个槽位都没改的调色板 = 没换皮肤，必须被拒
+  const noop = hatchEgg(T0)
+  ok('一个槽位都没改的调色板被拒',
+    registerCustomSkin(noop, { key: 'noop-pig', palette: { ...SKIN_SLOTS } }, T0).reason === 'invalid')
+
+  // (9) 内置键不能被自制皮肤顶掉
+  const clash = hatchEgg(T0)
+  ok('自制皮肤不能占用内置键 mint',
+    registerCustomSkin(clash, { key: 'mint', palette: { body: '#123456' } }, T0).reason === 'reserved')
+  ok('自制皮肤不能占用 default',
+    registerCustomSkin(clash, { key: 'default', palette: { body: '#123456' } }, T0).reason === 'reserved')
+
+  // (10) 存档里带着一个不存在的皮肤键时，静默回到默认，而不是崩或者空图
+  const stale = hatchEgg(T0)
+  stale.skin = 'deleted-skin'
+  ensureSkins(stale)
+  ok('存档里的未知皮肤键被清成 default', stale.skin === 'default')
+  ok('未知皮肤键清掉后 skinPalette 是 null', skinPalette(stale) === null)
+
+  // (11) 场景名表必须和宿主（main.js）的 `SCENE_SRC` 对得上。
+  //      这两张表分居两个文件，漂移了不会报错：换皮肤时只是**少重着色一张**，
+  //      或者去重着色一张根本不存在的图（fetch 404，静默回落到 idle）。
+  const mainSrc = readFileSync(new URL('../main.js', import.meta.url), 'utf8')
+  const sceneBlock = mainSrc.match(/const SCENE_SRC\s*=\s*\{([\s\S]*?)\}/)
+  ok('main.js 里有 SCENE_SRC 表', sceneBlock !== null)
+  const hostScenes = sceneBlock
+    ? [...sceneBlock[1].matchAll(/(\w+)\s*:/g)].map(m => m[1]).sort()
+    : []
+  ok(`核心的 ${SKIN_SCENES.length} 个场景名和 main.js 的 SCENE_SRC 一致（核心 ${[...SKIN_SCENES].sort().join(',')} / 宿主 ${hostScenes.join(',')}）`,
+    hostScenes.length === SKIN_SCENES.length &&
+    [...SKIN_SCENES].sort().every((name, i) => name === hostScenes[i]))
+  ok('每个场景名都能在 main.js 里找到对应的图路径',
+    SKIN_SCENES.every(name => new RegExp(`${name}\\s*:\\s*["'\`]`).test(mainSrc)))
+
+  // (12) 形态视图要带上当前皮肤（D11：形态与皮肤解耦，但同屏出现时得用同一套色）
+  const staged = hatchEgg(T0)
+  selectSkin(staged, 'grape', T0)
+  const stageWithSkin = skinStageView(staged, { art: 'x', stage: 'piglet' })
+  ok('skinStageView 带上了当前皮肤',
+    stageWithSkin.palette?.body === SKINS.find(s => s.key === 'grape').palette.body &&
+    stageWithSkin.skin === 'grape')
+  ok('skinStageView 不会破坏原 stage 的字段', stageWithSkin.art === 'x' && stageWithSkin.stage === 'piglet')
+
+  // (13) 加皮肤**不增加磁盘占用** —— 皮肤条目里除了调色板没有任何图/文件字段
+  const artFields = SKINS.flatMap(skin =>
+    Object.keys(skin).filter(k => /^(art|src|url|file|svg|path|scenes?)$/i.test(k) && k !== 'scenes'))
+  ok(`皮肤条目里没有任何「图/文件」字段（0 字节磁盘占用，越界：${artFields.join(',') || '无'}）`,
+    artFields.length === 0)
+  const allHaveSix = allSkins(hatchEgg(T0)).every(skin =>
+    skin.palette === null || Object.keys(skin.palette).length === 6)
+  ok('皮肤列表里每一条要么是 null 调色板（默认），要么是完整的 6 槽', allHaveSix)
 
   const forms = formsView(pig)
   ok('formsView 列出两个形态（P2 用）', forms !== null && forms.forms.length === 2)

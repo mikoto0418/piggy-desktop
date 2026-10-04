@@ -119,6 +119,58 @@ input[type="checkbox"]:checked::after { transform: translateX(18px); background:
 .bound { color: var(--dim); font-size: 12px; }
 .bound b { color: var(--ok); font-weight: 500; }
 
+/* ── 皮肤选择器 ──
+   每个皮肤显示成「4 个真实色块 + 名字」的卡片。
+   色块直接取调色板里真的会画上去的那几个色，所以预览不可能和实际不符，
+   也不需要为每个皮肤多做一张缩略图（那会破坏「每个皮肤 0 字节」）。 */
+.skins {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 8px;
+}
+
+.skin-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.skin-card:hover { border-color: var(--accent-dim); }
+.skin-card.current {
+  border-color: var(--accent);
+  background: rgba(255, 159, 165, .1);
+}
+.skin-card.current::after {
+  content: "✓";
+  color: var(--accent);
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.skin-chips { display: flex; flex: 0 0 auto; }
+.skin-chips i {
+  width: 14px;
+  height: 22px;
+  display: block;
+}
+.skin-chips i:first-child { border-radius: 4px 0 0 4px; }
+.skin-chips i:last-child  { border-radius: 0 4px 4px 0; }
+
+.skin-name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .problems {
   margin-top: 10px;
   padding: 10px 12px;

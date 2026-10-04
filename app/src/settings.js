@@ -9,7 +9,7 @@
  */
 
 const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+const { listen, emit } = window.__TAURI__.event;
 
 /** 当前配置（Rust 侧 Config 的镜像）。 */
 let cfg = null;
@@ -170,6 +170,82 @@ function setupKeyCapture(id, path) {
   });
 }
 
+// ---------------------------------------------------------------- 皮肤
+
+/**
+ * 渲染皮肤选择器。
+ *
+ * 数据**只能**来自桌宠窗口：存档在它的内存里，设置窗口读不到文件，
+ * 直接去读 `pet.json` 更糟 —— 内存态是新的、文件是防抖后才写的，
+ * 会读到旧值，还会在下一次防抖存盘时被内存态覆盖回去。
+ * 所以走事件：`piggy://skin-request` 问，`piggy://skin` 答。
+ */
+function renderSkins(payload) {
+  const box = document.getElementById("skins");
+  const entries = payload?.entries ?? [];
+  box.replaceChildren();
+
+  // 收到列表也打一条日志：这是「请求 → 回应」整条链路唯一的观测点。
+  invoke("log_from_js", {
+    msg: `皮肤列表已收到: ${entries.length} 个, 当前=${payload?.key ?? "?"}, `
+       + `keys=${entries.map((e) => e.key).join(",")}`,
+  }).catch(() => {});
+
+  if (entries.length === 0) {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = "桌宠窗口没有回应（它可能没在运行）。";
+    box.appendChild(p);
+    return;
+  }
+
+  const current = payload.key ?? "default";
+  for (const e of entries) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "skin-card";
+    card.dataset.key = e.key;
+    if (e.key === current) card.classList.add("current");
+
+    // 预览用**真的会画到猪身上的那几个色**，而不是另做一张缩略图 ——
+    // 另做缩略图就等于每个皮肤又多了一份美术资源，0 字节的承诺就破了。
+    const chips = document.createElement("span");
+    chips.className = "skin-chips";
+    for (const slot of ["body", "ears", "nose", "blush"]) {
+      const chip = document.createElement("i");
+      chip.style.background = e.palette?.[slot] ?? "#8b8b96";
+      chips.appendChild(chip);
+    }
+
+    const name = document.createElement("span");
+    name.className = "skin-name";
+    name.textContent = `${e.emoji ?? "🎨"} ${e.label ?? e.key}`;
+
+    card.append(chips, name);
+    if (e.description) card.title = e.description;
+    card.addEventListener("click", () => selectSkin(e.key));
+    box.appendChild(card);
+  }
+}
+
+async function selectSkin(key) {
+  // 落一条日志：跨窗口事件是**看不见的**，出问题时无从判断是
+  // 「点击没落到卡片上」还是「事件没送到桌宠窗口」，只能靠打点分开。
+  await invoke("log_from_js", { msg: `点击皮肤卡片 key=${key}` }).catch(() => {});
+  try {
+    await emit("piggy://select-skin", { key });
+    await invoke("log_from_js", { msg: `已广播 piggy://select-skin key=${key}` }).catch(() => {});
+    // 桌宠窗口改完会回播 `piggy://skin`，界面随之刷新。
+    // 这里先乐观高亮一下，避免点了没反应的感觉。
+    for (const el of document.querySelectorAll(".skin-card")) {
+      el.classList.toggle("current", el.dataset.key === key);
+    }
+  } catch (e) {
+    await invoke("log_from_js", { msg: `广播皮肤事件失败：${e}` }).catch(() => {});
+    toast(`换皮肤失败：${e}`, true);
+  }
+}
+
 // ---------------------------------------------------------------- 模式/冲突回显
 
 function renderMode(snap) {
@@ -259,6 +335,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     renderMode(await invoke("get_mode"));
   } catch (_) { /* 忽略 */ }
   await listen("piggy://mode", (ev) => renderMode(ev.payload));
+
+  // 皮肤：问桌宠窗口要一次当前列表，之后靠它回播刷新
+  await listen("piggy://skin", (ev) => renderSkins(ev.payload));
+  await invoke("log_from_js", { msg: "皮肤选择器：开始请求列表" }).catch(() => {});
+  try {
+    await emit("piggy://skin-request", {});
+  } catch (e) {
+    await invoke("log_from_js", { msg: `请求皮肤列表失败：${e}` }).catch(() => {});
+    renderSkins(null);
+  }
 
   await renderDiag();
 });
